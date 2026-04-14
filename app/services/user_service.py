@@ -1,8 +1,5 @@
 from datetime import datetime, timedelta
-
-
 from pydantic import SecretStr
-
 from app.core.config import settings
 import jwt
 from pymongo.asynchronous.database import AsyncDatabase
@@ -31,7 +28,6 @@ class UserService:
         user_dict["role"] = UserRole.USER.value
         user_dict["password"] = hash_password(user_in.password)
         
-        # 3. Add timestamps
         user_dict["created_at"] = datetime.now().isoformat()
         
         
@@ -39,50 +35,33 @@ class UserService:
         return await self.repo.create_user(user_dict)
 
     async def login_user(self, payload: OAuth2PasswordRequestForm, response: Response):
-            email = payload.username
-            lockout_key = f"lockout:{email}"
-            attempts_key = f"attempts:{email}"
+        email = payload.username
+        user = await self.repo.find_by_email(email)
+        
+        if not user:
+            raise Unauthorized("Invalid email or password")
 
-            # 1. Check if user is currently locked out
-            if await redis_client.exists(lockout_key):
-                ttl = await redis_client.ttl(lockout_key)
-                raise Forbidden(f"Account locked try again in {ttl//60} minutes")
+        tokens = generate_tokens(user)
+        
+        await self.token.create_token(
+            user_id=str(user["_id"]), 
+            token_str=tokens["refresh_token"],
+            days_valid=settings.refresh_expire_in_days
+        )
 
-            user = await self.repo.find_by_email(email)
-            
-            # 2. Verify Credentials
-            if not user or not verify_password(payload.password, user.get("password")):
-                # --- FAILURE BLOCK ---
-                failed_count = await redis_client.incr(attempts_key)
-                
-                if failed_count == 1:
-                    await redis_client.expire(attempts_key, 600) # 10 min window
-
-                if failed_count >= 5:
-                    await redis_client.setex(lockout_key, 600, "locked")
-                    await redis_client.delete(attempts_key)
-                    raise Forbidden("Too many attempts. Locked for 10 min.")
-                    
-                raise Unauthorized(f"Invalid credentials. {5 - failed_count} attempts left.")
-            
-            
-
-            
-            await redis_client.delete(attempts_key)
-
-            tokens = generate_tokens(user)
-            response.set_cookie(
+        response.set_cookie(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,
             secure=False, 
             samesite="lax",
-            max_age=(settings.refresh_expire_in_days* 24 * 60 + 330) * 60
+            max_age=(settings.refresh_expire_in_days * 24 * 60) * 60
         )
         
-            return tokens
-        
-    async def refresh_token(self, refresh_token: str):
+        return tokens
+    
+    async def refresh_token(self, refresh_token: str, response: Response):
+    # 1. JWT Decoding
         try:
             payload = jwt.decode(
                 refresh_token, 
@@ -92,32 +71,50 @@ class UserService:
         except jwt.exceptions.InvalidSignatureError:
             raise Unauthorized("Invalid refresh token signature")
         except jwt.exceptions.ExpiredSignatureError:
+            # Important: If it's expired in JWT, it might still be in DB. 
+            # You could optionally revoke it in DB here too.
             raise Unauthorized("Refresh token expired")
 
-        db_token = await self.token.get_refresh_token(refresh_token)
-        
-        if not db_token:
-            raise Unauthorized("Refresh token not found in database")
-        
-        if db_token.get("revoked"):
-            raise Unauthorized("This token has been revoked")
-
-        # 2. Basic Payload Validation
         if payload.get("type") != "refresh":
             raise Unauthorized("This is not a refresh token")
 
-        email = payload.get("sub")
-        if not email:
-            raise Unauthorized("Token payload missing email")
+        # 2. Atomic Database Validation & Revocation
+        db_token = await self.token.find_and_revoke(refresh_token)
+        if not db_token:
+            raise Unauthorized("Token invalid or already used")
 
-        # 3. User Validation
-        user = await self.repo.find_by_email(email)
+        # 3. Find User
+        user = await self.repo.find_by_email(payload.get("sub"))
         if not user:
             raise NotFound("User not found")
-                
-        await self.token.revoke_token(refresh_token)
+
+        # 4. Generate NEW tokens
+        new_tokens = generate_tokens(user)
         
-        return generate_tokens(user)
+        # Handle both dict and Pydantic model return types
+        new_rt = new_tokens["refresh_token"] if isinstance(new_tokens, dict) else new_tokens.refresh_token
+
+        # 5. SAVE the NEW refresh token to DB
+        await self.token.create_token(
+            user_id=str(user["_id"]),
+            token_str=new_rt,
+            days_valid=settings.refresh_expire_in_days
+        )
+
+        # 6. Update the Cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=new_rt,
+            httponly=True,
+            secure=False, # Set to True in production (HTTPS)
+            samesite="lax",
+            max_age=(settings.refresh_expire_in_days * 24 * 60) * 60
+        )
+
+        return new_tokens
+
+
+
 
     
 

@@ -42,8 +42,8 @@ async def login(response:Response,
     """
     return await UserService(db).login_user(payload,response)
 
-@router.post("/refresh",response_model=RefreshResponse)
-async def refresh(refresh_token:str,db = Depends(get_db))->dict:
+@router.post("/refresh",response_model=Token)
+async def refresh(response: Response,refresh_token:str,db = Depends(get_db))->dict:
     """by providing refresh token generate pairs of tokens
 
     Args:
@@ -53,7 +53,7 @@ async def refresh(refresh_token:str,db = Depends(get_db))->dict:
     Returns:
         dict: return tokens
     """
-    return await UserService(db).refresh_token(refresh_token)
+    return await UserService(db).refresh_token(refresh_token,response)
 
 @router.post("/setup-root",response_model=UserResponse)
 async def setup_admin(

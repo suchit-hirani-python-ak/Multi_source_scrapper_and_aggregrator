@@ -1,13 +1,11 @@
-from datetime import datetime
-from typing import Optional
 from pydantic import BaseModel,ConfigDict
 
 from app.schemas.users import UserRole
 
 class TokenResponse(BaseModel):
     id: str
-    sub: str       # This contains the email
-    role: str      # This contains "admin" or "user"
+    sub: str       
+    role: str     
     exp: int   
     
     model_config = ConfigDict(from_attributes=True)
