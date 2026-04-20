@@ -1,0 +1,6 @@
+projectKey=scrapper
+serverUrl=http://localhost:9000
+serverVersion=26.4.0.121862
+dashboardUrl=http://localhost:9000/dashboard?id=scrapper
+ceTaskId=e2dc1d94-1153-49b3-a0a1-d59d7d0c497e
+ceTaskUrl=http://localhost:9000/api/ce/task?id=e2dc1d94-1153-49b3-a0a1-d59d7d0c497e
