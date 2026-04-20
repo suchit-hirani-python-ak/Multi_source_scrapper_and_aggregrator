@@ -41,4 +41,5 @@ class JobRepository:
             "progress": 100,
             "results": results
         })
-        
+    async def get_jobs(self, query: dict):
+        return await self.collection.find(query).to_list(length=100)

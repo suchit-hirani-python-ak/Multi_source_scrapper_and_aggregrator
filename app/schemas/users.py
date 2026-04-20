@@ -4,7 +4,6 @@ from typing import Annotated
 from enum import Enum
 from pydantic import BeforeValidator
 
-# Helper to handle MongoDB ObjectId as a string in Pydantic
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
 class UserRole(str, Enum):
@@ -14,8 +13,6 @@ class UserRole(str, Enum):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
-
-
 class UserResponse(BaseModel):
     id: PyObjectId = Field(alias="_id")
     email: EmailStr

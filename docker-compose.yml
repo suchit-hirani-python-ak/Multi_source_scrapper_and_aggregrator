@@ -3,57 +3,40 @@ services:
     image: redis:alpine
     ports:
       - "6380:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   app:
-    container_name: app
     build: .
+    container_name: app
     volumes:
       - .:/app
-      - /venv
     ports:
       - "8001:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - UV_PROJECT_ENVIRONMENT=/venv
+    command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
 
   celery_worker:
-    container_name: celery_worker
     build: .
-    # Point to app.utils.celery and set PYTHONPATH
-    command: uv run celery -A app.utils.celery worker --loglevel=info --concurrency=1
+    container_name: celery_worker
+    command: uv run celery -A app.utils.celery worker --loglevel=info
     volumes:
       - .:/app
-      - /venv
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - UV_PROJECT_ENVIRONMENT=/venv
-      - PYTHONPATH=. 
+      - PYTHONPATH=.
     depends_on:
-      redis:
-        condition: service_healthy
-      app:
-        condition: service_started
+      - redis
 
   flower:
-    container_name: flower
     build: .
+    container_name: flower
     command: uv run celery -A app.utils.celery flower --port=5555
     ports:
       - "5556:5555"
     volumes:
       - .:/app
-      - /venv
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - UV_PROJECT_ENVIRONMENT=/venv
       - PYTHONPATH=.
-    depends_on:
-      - redis

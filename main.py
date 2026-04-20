@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.db.session import db_manager,get_db
 from app.routes import  jobscrape_route, user_route
 from app.exception.error import BaseException
+from app.middleware.log_middleware import log_requests_middleware
 
 
 @asynccontextmanager
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
 # 2. Pass the lifespan to the FastAPI app
 app = FastAPI(lifespan=lifespan)
 
-
+app.middleware("http")(log_requests_middleware)
 
 app.include_router(user_route.router,prefix="/auth",tags=["Authentication"])
 app.include_router(jobscrape_route.router, prefix="/scrape", tags=["Scrape data"])

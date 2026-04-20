@@ -4,7 +4,7 @@ import jwt
 from fastapi.security import OAuth2PasswordBearer
 import redis.asyncio as redis
 from passlib.context import CryptContext
-redis_client = redis.from_url(settings.redis_url,decode_responses= True)
+redis_client = redis.from_url(settings.redis_url,decode_responses= True, max_connections=10)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 

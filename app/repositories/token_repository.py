@@ -9,7 +9,7 @@ class TokenRepository:
         self.collection = db.get_collection("refresh_token")
 
     async def create_token(self, user_id: str, token_str: str, days_valid: int):
-        # This insert creates the collection
+        
         await self.collection.insert_one({
             "user_id": user_id,
             "refresh_token": token_str,
@@ -19,7 +19,7 @@ class TokenRepository:
         })
 
     async def find_and_revoke(self, token_str: str):
-        # Atomic find and update
+        
         return await self.collection.find_one_and_update(
             {"refresh_token": token_str, "revoked": False}, 
             {"$set": {"revoked": True}},
