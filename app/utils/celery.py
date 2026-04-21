@@ -42,7 +42,7 @@ async def scrape_wrapper(job_id: str, site: str, categories: list, limit: int):
 
     try:
         db = await get_db()
-        repo = JobRepository(db)
+        repo = JobRepository(db)#type:ignore
         r_helper = RedisHelper(redis_client)
 
         cache_key = f"cache:{site}:{sorted(categories)}:{limit}"
@@ -100,7 +100,7 @@ async def scrape_wrapper(job_id: str, site: str, categories: list, limit: int):
 @celery_app.task(bind=True, name="execute_scrape_process")
 def execute_scrape_process(self, job_id: str, site: str, categories: list, limit: int):
     
-    self.update_state(state="RUNNING", meta={"progress": 50})
+    self.update_state(state="running", meta={"progress": 50})
 
     try:
         result = async_to_sync(scrape_wrapper)(
@@ -110,18 +110,20 @@ def execute_scrape_process(self, job_id: str, site: str, categories: list, limit
         return result   
 
     except Exception as e:
-        self.update_state(state="FAILURE", meta={"error": str(e)})
+        self.update_state(state="failure", meta={"error": str(e)})
         raise e
     
 @celery_app.task(name="create_log_task")
 def create_log_task(log_data: dict):
-    return asyncio.run(async_log_wrapper(log_data))
-
+    return async_to_sync(async_log_wrapper)(log_data)
 
 async def async_log_wrapper(log_data: dict):
-
-    db = db_manager.db
-
-    repo = LogRepository(db)
-
+    if db_manager.client is None:
+        await db_manager.connect_to_mongo()
+    
+    db = await get_db()
+    
+    # 3. Execute
+    repo = LogRepository(db)#type:ignore
     return await repo.create_log(log_data)
+
