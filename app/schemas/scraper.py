@@ -32,13 +32,11 @@ class JobResponse(BaseModel):
 
 class JobStatusResponse(BaseModel):
     job_id: str
-    site: Optional[SiteName] = None
+    site: Optional[str] = None
     status: str
     progress: int
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    created_at: datetime | None = None 
+    updated_at: datetime | None = None
 
 
 class JobResultsResponse(BaseModel):

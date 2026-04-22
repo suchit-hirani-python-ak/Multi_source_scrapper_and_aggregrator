@@ -79,15 +79,15 @@ class ScraperService:
 
         return {
             "job_id": job_id,
-            "site": data.get("site") if data else None,
+            "site": data.get("site"),
 
             "status": status,
 
             "celery_state": celery_state,
 
-            "progress": int(data.get("progress", 0)) if data else 0,
-            "created_at": data.get("created_at") if data else None,
-            "updated_at": data.get("updated_at") if data else None,
+            "progress": int(data.get("progress", 0)),
+            "created_at": data.get("created_at"),
+            "updated_at": data.get("updated_at"),
         }
 
     async def get_job_results(self, job_id: str, limit: int):
