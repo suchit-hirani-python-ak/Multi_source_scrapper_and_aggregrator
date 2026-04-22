@@ -121,8 +121,6 @@ class YahooFinanceScraper:
             return {
                 "query": original_query,
                 "ticker": ticker,
-                "company_name": self.driver.find_element(By.CSS_SELECTOR, "h1").text.strip(),
-
                 "price": price["price"],
                 "change": price["change"],
                 "change_percent": price["change_percent"],

@@ -30,8 +30,6 @@ async def get_job_status(
     user:  Annotated[TokenResponse, Depends(get_current_user)]
 ):
     status = await ScraperService(db, redis).get_job_status(job_id)
-    if not status:
-        raise HTTPException(status_code=404, detail="Job not found")
     return status
 
 @router.get("/jobs/{job_id}/results")

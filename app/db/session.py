@@ -1,31 +1,38 @@
-from app.core.config import settings
+import asyncio
 from pymongo import AsyncMongoClient
-
+from app.core.config import settings
 class DatabaseManager:
     def __init__(self):
         self.client = None
         self.db = None
+        self._loop_id = None  # Track which loop owns this client
 
     async def connect_to_mongo(self):
-        """Initialize the single shared client."""
-        # AsyncMongoClient handles connection pooling (default 100) automatically
-        self.client = AsyncMongoClient(
-            settings.mongo_url,
-            # maxPoolSize to control concurrent connections
-            maxPoolSize=100 
-        )
-        # Pre-select your database
-        self.db = self.client["scraping-and-aggregratioin"]
-        print("Connected to MongoDB")
+        current_loop = asyncio.get_running_loop()
+        
+        # If loop changed or client is missing, recreate it
+        if self.client is None or self._loop_id != id(current_loop):
+            # Important: Don't await old client.close() if the loop is already dead
+            self.client = AsyncMongoClient(
+                settings.mongo_url,
+                maxPoolSize=100 
+            )
+            self.db = self.client["scraping-and-aggregratioin"]
+            self._loop_id = id(current_loop)
+            print(f"Connected to MongoDB on loop {self._loop_id}")
 
     async def close_mongo_connection(self):
-        """Close the client on app shutdown."""
         if self.client:
-            await self.client.close()
-            print("Closed MongoDB connection")
+            # We don't await here because if the loop is closed, 
+            # awaiting will throw the same RuntimeError.
+            self.client.close()  # type: ignore
+            self.client = None
+            self.db = None
+            self._loop_id = None
+
 db_manager = DatabaseManager()
 
 async def get_db():
-    if db_manager.db is None:
-        raise RuntimeError("Database not initialized")
+    # Force a loop-check every time we get the DB
+    await db_manager.connect_to_mongo()
     return db_manager.db
