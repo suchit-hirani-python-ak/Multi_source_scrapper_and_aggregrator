@@ -5,7 +5,6 @@ from asgiref.sync import async_to_sync
 from app.core.config import settings
 from app.db.session import db_manager, get_db
 from app.repositories.job_repository import JobRepository
-from app.repositories.log_repository import LogRepository
 from app.scrapers.quotescrape import quote_scrape_logic
 from app.scrapers.bookscrape import book_scrape_logic
 from app.scrapers.ycombinatorscrape import ycombinator_scrape_logic
@@ -112,18 +111,4 @@ def execute_scrape_process(self, job_id: str, site: str, categories: list, limit
     except Exception as e:
         self.update_state(state="failure", meta={"error": str(e)})
         raise e
-    
-@celery_app.task(name="create_log_task")
-def create_log_task(log_data: dict):
-    return async_to_sync(async_log_wrapper)(log_data)
-
-async def async_log_wrapper(log_data: dict):
-    if db_manager.client is None:
-        await db_manager.connect_to_mongo()
-    
-    db = await get_db()
-    
-    # 3. Execute
-    repo = LogRepository(db)#type:ignore
-    return await repo.create_log(log_data)
 

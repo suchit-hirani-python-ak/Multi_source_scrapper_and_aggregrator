@@ -2,15 +2,15 @@ services:
   redis:
     image: redis:alpine
     ports:
-      - "6380:6379"
+      - "6381:6379"
 
   app:
     build: .
-    container_name: app
+    container_name: app-1
     volumes:
       - .:/app
     ports:
-      - "8001:8000"
+      - "8002:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
     command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -19,7 +19,7 @@ services:
 
   celery_worker:
     build: .
-    container_name: celery_worker
+    container_name: celery_worker-1
     command: uv run celery -A app.utils.celery worker --loglevel=info
     volumes:
       - .:/app
@@ -31,10 +31,10 @@ services:
 
   flower:
     build: .
-    container_name: flower
+    container_name: flower-1
     command: uv run celery -A app.utils.celery flower --port=5555
     ports:
-      - "5556:5555"
+      - "5557:5555"
     volumes:
       - .:/app
     environment:
