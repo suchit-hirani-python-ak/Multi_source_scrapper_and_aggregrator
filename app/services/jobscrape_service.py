@@ -53,7 +53,7 @@ class ScraperService:
                 message="Scraping job started in background"
             )
 
-        execute_scrape_process.apply_async(
+        execute_scrape_process.apply_async( # type:ignore
             args=[job_id, site_value, categories_list, limit],
             task_id=job_id
         )
@@ -72,7 +72,7 @@ class ScraperService:
         task = AsyncResult(job_id)
         celery_state = task.state
 
-        if not data and celery_state == "PENDING":
+        if not data and celery_state == "pending":
             return None
 
         status = data.get("status") if data else celery_state
