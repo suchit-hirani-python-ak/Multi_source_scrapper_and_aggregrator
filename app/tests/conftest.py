@@ -15,13 +15,11 @@ MONGO_URL = settings.mongo_url
 
 @pytest_asyncio.fixture(scope="function")
 async def db():
-    # Initialize the real async client
     client = AsyncMongoClient(MONGO_URL)
     database = client[TEST_DB]
     
     yield database
     
-    # Teardown: Clean up the test database entirely
     try:
         await client.drop_database(TEST_DB)
     finally:
@@ -29,11 +27,9 @@ async def db():
         
 @pytest_asyncio.fixture
 async def fake_redis():
-    """Provides a fake async Redis client for testing."""
-    # Create an instance that mimics redis.asyncio.Redis
+
     client = Redis(decode_responses=True)
     yield client
-    # Cleanup after each test
     await client.flushall()
     await client.close()
     
@@ -48,7 +44,7 @@ def mock_db():
 
 @pytest_asyncio.fixture
 async def client(mock_db):
-    with patch("app.dependencies.depandency.redis_client", AsyncMock()):
+    with patch("app.dependencies.dependency.redis_client", AsyncMock()):
         mock_user = MagicMock()
         mock_user.id = "660adb23f51bb4362e0020ee"
         mock_user.email = "suchit@gmail.com"

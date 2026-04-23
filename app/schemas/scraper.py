@@ -19,7 +19,7 @@ class SiteName(str, Enum):
 class JobRequest(BaseModel):
     site: SiteName
     categories: List[str] 
-    limit: int = Field(default=50, ge=1, le=100)
+    limit: int = Field(default=50, ge=1, le=10000)
 
     model_config = ConfigDict(use_enum_values=True)
 

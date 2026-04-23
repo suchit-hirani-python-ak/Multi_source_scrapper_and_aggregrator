@@ -11,7 +11,6 @@ class TokenResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     @property
     def email(self):
-        """Helper to allow calling user.email instead of user.sub"""
         return self.sub
 
 class Token(BaseModel):

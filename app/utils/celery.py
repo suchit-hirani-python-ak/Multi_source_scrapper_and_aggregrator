@@ -98,17 +98,11 @@ async def scrape_wrapper(job_id: str, site: str, categories: list, limit: int):
 
 @celery_app.task(bind=True, name="execute_scrape_process")
 def execute_scrape_process(self, job_id: str, site: str, categories: list, limit: int):
-    
+
     self.update_state(state="running", meta={"progress": 50})
 
     try:
-        result = async_to_sync(scrape_wrapper)(
-            job_id, site, categories, limit
-        )
-
-        return result   
-
+        return async_to_sync(scrape_wrapper)(job_id, site, categories, limit)
     except Exception as e:
-        self.update_state(state="failure", meta={"error": str(e)})
-        raise e
-
+        raise Exception(str(e))
+    

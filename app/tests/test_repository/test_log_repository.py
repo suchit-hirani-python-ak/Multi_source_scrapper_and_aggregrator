@@ -7,7 +7,6 @@ async def test_create_log_success(db):
     """Verifies that a log entry is successfully saved to the database."""
     repo = LogRepository(db)
     
-    # Define test data following LogSchema structure
     log_data = {
         "path": "/api/v1/users",
         "method": "POST",
@@ -18,10 +17,8 @@ async def test_create_log_success(db):
         "timestamp": datetime.now(timezone.utc)
     }
 
-    # Execute
     await repo.create_log(log_data)
 
-    # Verify in DB (using collection name defined in Repository)
     log_in_db = await db["RequestLogs"].find_one({"job_id": "job_123"})
     
     assert log_in_db is not None

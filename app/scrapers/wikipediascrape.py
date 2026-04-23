@@ -3,7 +3,6 @@ import httpx
 import re
 from urllib.parse import quote
 from app.utils.job_control import is_cancelled, safe_complete, safe_progress, safe_stream
-from app.utils.redishelper import RedisHelper
 
 
 class WikipediaScraper:
