@@ -21,6 +21,7 @@ services:
     build: .
     container_name: celery_worker-1
     command: uv run celery -A app.utils.celery worker --loglevel=info
+    shm_size: '2gb'
     volumes:
       - .:/app
     environment:

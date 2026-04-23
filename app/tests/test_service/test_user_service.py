@@ -2,12 +2,12 @@ import jwt
 import pytest
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from app.services.user_service import UserService
-from app.exception.error import BadRequest, Unauthorized, Forbidden
+from app.exception.error import BadRequest, NotFound, Unauthorized, Forbidden
 from app.schemas.users import UserCreate, UserRole
 
 @pytest.mark.asyncio
 async def test_register_user_success():
-    # 1. Setup
+
     mock_db = MagicMock()
     service = UserService(mock_db)
     service.repo = AsyncMock()
@@ -16,14 +16,12 @@ async def test_register_user_success():
     service.repo.find_by_email.return_value = None
     service.repo.create_user.return_value = {"email": "test@example.com", "role": "user"}
 
-    # 2. Patch hash_password to return a fixed string
     with patch("app.services.user_service.hash_password", return_value="hashed_val"):
         result = await service.register_user(user_in)
 
-        # 3. Assertions
         assert result["email"] == "test@example.com"
         service.repo.create_user.assert_called_once()
-        # Verify the password was hashed before saving
+
         called_args = service.repo.create_user.call_args[0][0]
         assert called_args["password"] == "hashed_val"
         assert called_args["role"] == UserRole.USER.value
@@ -42,7 +40,7 @@ async def test_register_user_already_exists():
 
 @pytest.mark.asyncio
 async def test_login_user_success():
-    # 1. Setup
+
     service = UserService(MagicMock())
     service.repo = AsyncMock()
     service.token = AsyncMock()
@@ -57,14 +55,14 @@ async def test_login_user_success():
 
     mock_tokens = {"access_token": "at", "refresh_token": "rt"}
     
-    # 2. Execute
+
     with patch("app.services.user_service.generate_tokens", return_value=mock_tokens):
         result = await service.login_user(mock_payload, mock_response)
 
-        # 3. Basic Assertions
+ 
         assert result == mock_tokens
         
-        # Verify Token Repository was called correctly
+
         service.token.create_token.assert_called_once_with(
             user_id=user_id, 
             token_str="rt", 
@@ -86,7 +84,6 @@ async def test_login_user_success():
 async def test_refresh_token_expired():
     service = UserService(MagicMock())
     
-    # Mock jwt.decode to raise Expired Error
     with patch("jwt.decode", side_effect=jwt.exceptions.ExpiredSignatureError):
         with pytest.raises(Unauthorized) as exc:
             await service.refresh_token("expired_token", MagicMock())
@@ -97,7 +94,6 @@ async def test_register_admin_forbidden():
     service = UserService(MagicMock())
     
     user_in = UserCreate(email="admin@test.com", password="password")
-    # Wrong secrets
     secret_name = MagicMock()
     secret_name.get_secret_value.return_value = "wrong"
     secret_pass = MagicMock()
@@ -118,3 +114,78 @@ async def test_delete_user_account_success():
 
     assert result["message"] == "User successfully deleted"
     service.repo.remove_user.assert_called_once_with("user_123")
+
+@pytest.mark.asyncio
+async def test_login_user_invalid_email():
+    service = UserService(MagicMock())
+    service.repo = AsyncMock()
+
+    service.repo.find_by_email.return_value = None
+    mock_payload = MagicMock(username="wrong@test.com")
+
+    with pytest.raises(Unauthorized) as exc:
+        await service.login_user(mock_payload, MagicMock())
+    assert "Invalid email or password" in str(exc.value)
+
+@pytest.mark.asyncio
+async def test_refresh_token_invalid_type():
+    service = UserService(MagicMock())
+
+    payload = {"sub": "user@test.com", "type": "access"}
+    
+    with patch("jwt.decode", return_value=payload):
+        with pytest.raises(Unauthorized) as exc:
+            await service.refresh_token("wrong_type_token", MagicMock())
+        assert "not a refresh token" in str(exc.value)
+
+@pytest.mark.asyncio
+async def test_refresh_token_already_revoked():
+    service = UserService(MagicMock())
+    service.token = AsyncMock()
+    
+    payload = {"sub": "user@test.com", "type": "refresh"}
+
+    service.token.find_and_revoke.return_value = None
+
+    with patch("jwt.decode", return_value=payload):
+        with pytest.raises(Unauthorized) as exc:
+            await service.refresh_token("already_used_token", MagicMock())
+        assert "Token invalid or already used" in str(exc.value)
+
+@pytest.mark.asyncio
+async def test_register_admin_success():
+    service = UserService(MagicMock())
+    service.repo = AsyncMock()
+    
+    user_in = UserCreate(email="admin@test.com", password="password")
+    service.repo.find_by_email.return_value = None
+    service.repo.create_user.return_value = {"email": "admin@test.com", "role": "admin"}
+
+    secret_name = MagicMock()
+    secret_name.get_secret_value.return_value = "expected_admin_name"
+    secret_pass = MagicMock()
+    secret_pass.get_secret_value.return_value = "expected_admin_pass"
+
+    with patch("app.services.user_service.settings") as mock_settings, \
+         patch("app.services.user_service.hash_password", return_value="hashed"):
+        
+        mock_settings.admin_name.get_secret_value.return_value = "expected_admin_name"
+        mock_settings.admin_pass.get_secret_value.return_value = "expected_admin_pass"
+
+        result = await service.register_admin(user_in, secret_name, secret_pass)
+        
+        assert result["role"] == "admin"
+        called_args = service.repo.create_user.call_args[0][0]
+        assert called_args["role"] == UserRole.ADMIN.value
+
+@pytest.mark.asyncio
+async def test_delete_user_account_not_found():
+    service = UserService(MagicMock())
+    service.repo = AsyncMock()
+    
+    mock_token_resp = MagicMock(id="missing_user")
+    service.repo.remove_user.return_value = False
+
+    with pytest.raises(NotFound) as exc:
+        await service.delete_user_account(mock_token_resp)
+    assert "User not found" in str(exc.value)

@@ -1,165 +1,87 @@
-import time
 import re
-import asyncio
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import TimeoutException
+import yfinance as yf
 from app.utils.job_control import is_cancelled, safe_stream, safe_progress, safe_complete
 
 class YahooFinanceScraper:
-
-    def __init__(self, headless=True):
-        options = Options()
-        if headless:
-            options.add_argument("--headless=new")
-
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        self.driver = webdriver.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 15)
-
+    def __init__(self):
+        pass
 
     def _normalize_query(self, query):
-        return re.sub(r"\s+", " ", query.strip().lower()) if query else ""
+        return re.sub(r"\s+", " ", query.strip()) if query else ""
 
-    def _search_and_navigate(self, query):
-        self.driver.get("https://finance.yahoo.com/")
-
+    def _resolve_ticker(self, query):
+        
         try:
-            search_box = self.wait.until(
-                EC.element_to_be_clickable((By.NAME, "p"))
-            )
-        except TimeoutException:
-            return query.upper()
-
-        search_box.clear()
-        search_box.send_keys(query)
-        time.sleep(1)
-        search_box.send_keys(Keys.RETURN)
-        time.sleep(3)
-
-        try:
-            ticker = self.driver.current_url.split("/quote/")[1].split("/")[0]
-        except:
-            ticker = query.upper()
-
-        return ticker
-
-    def _extract_price(self):
-        data = {}
-
-        fields = {
-            "price": 'fin-streamer[data-field="regularMarketPrice"]',
-            "change": 'fin-streamer[data-field="regularMarketChange"]',
-            "change_percent": 'fin-streamer[data-field="regularMarketChangePercent"]',
-        }
-
-        for key, selector in fields.items():
-            try:
-                el = self.driver.find_element(By.CSS_SELECTOR, selector)
-                value = el.get_attribute("value") or el.text.strip()
-                data[key] = value if value else "N/A"
-            except:
-                data[key] = "N/A"
-
-        return data
-
-
-    def _extract_summary(self):
-        data = {}
-
-        try:
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "ul li")
-
-            for row in rows:
-                try:
-                    label = row.find_element(By.CSS_SELECTOR, "span.label").text.strip()
-                    value = row.find_element(By.CSS_SELECTOR, "span.value").text.strip()
-
-                    if label and value:
-                        data[label] = value
-
-                except:
-                    continue
-
-        except:
+            
+            search = yf.Search(query, max_results=1)
+            if search.quotes and len(search.quotes) > 0:
+                return search.quotes[0]['symbol']
+        except Exception:
             pass
-
-        return data
+        return query.upper()
 
     def scrape(self, query):
         try:
             original_query = query
-            query = self._normalize_query(query)
+            normalized = self._normalize_query(query)
 
-            if not query:
+            if not normalized:
                 return {"query": original_query, "error": "Empty query"}
 
-            # resolve ticker
-            ticker = self._search_and_navigate(query)
-            url = self.driver.current_url
+            ticker_symbol = self._resolve_ticker(normalized)
+            
+            ticker = yf.Ticker(ticker_symbol)
+            info = ticker.info
+            
+            if not info or 'symbol' not in info:
+                return {"query": original_query, "error": f"Could not find data for '{ticker_symbol}'"}
 
-            if "/quote/" not in url:
-                return {"query": original_query, "error": "No result found"}
-
-            # wait for page
-            self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            time.sleep(2)
-
-            # extract
-            price = self._extract_price()
-            summary = self._extract_summary()
-
-            def get(label):
-                return summary.get(label, "N/A")
+            def fmt(val):
+                return val if val is not None else "N/A"
 
             return {
                 "query": original_query,
-                "ticker": ticker,
-                "price": price["price"],
-                "change": price["change"],
-                "change_percent": price["change_percent"],
-                "previous_close": get("Previous Close"),
-                "open": get("Open"),
-                "day_range": get("Day's Range"),
-                "52_week_range": get("52 Week Range"),
-                "volume": get("Volume"),
-                "avg_volume": get("Avg. Volume"),
-                "market_cap": get("Market Cap (intraday)") or get("Market Cap"),
-                "pe_ratio": get("PE Ratio (TTM)"),
-                "eps": get("EPS (TTM)"),
-                "beta": get("Beta (5Y Monthly)"),
-                "dividend_yield": get("Forward Dividend & Yield"),
-                "ex_dividend_date": get("Ex-Dividend Date"),
-                "earnings_date": get("Earnings Date"),
 
-                "target_estimate_1y": get("1y Target Est"),
-                "url": url
+                "ticker": info.get("symbol"),
+                "company_name": info.get("longName") or info.get("shortName", "N/A"),
+
+                "price": fmt(info.get("currentPrice") or info.get("regularMarketPrice")),
+                "change": fmt(info.get("regularMarketChange")),
+                "change_percent": fmt(info.get("regularMarketChangePercent")),
+                "previous_close": fmt(info.get("previousClose")),
+                "open": fmt(info.get("open")),
+                "day_range": f"{fmt(info.get('dayLow'))} - {fmt(info.get('dayHigh'))}",
+                "52_week_range": f"{fmt(info.get('fiftyTwoWeekLow'))} - {fmt(info.get('fiftyTwoWeekHigh'))}",
+                "volume": fmt(info.get("volume")),
+                "avg_volume": fmt(info.get("averageVolume")),
+                "market_cap": fmt(info.get("marketCap")),
+                "pe_ratio": fmt(info.get("trailingPE")),
+                "eps": fmt(info.get("trailingEps")),
+                "beta": fmt(info.get("beta")),
+                "dividend_yield": f"{fmt(info.get('dividendRate'))} ({fmt(info.get('dividendYield'))})",
+                "ex_dividend_date": fmt(info.get("exDividendDate")),
+                "target_estimate_1y": fmt(info.get("targetMeanPrice")),
+                "url": f"https://yahoo.com{info.get('symbol')}"
             }
 
         except Exception as e:
             return {"query": query, "error": str(e)}
 
     def close(self):
-        self.driver.quit()
+        pass
 
 
 async def yahoo_scrape_logic(job_id, limit, categories, redis, site):
-
     scraper = YahooFinanceScraper()
-    queries = categories if categories else []
+    
+    queries = list(dict.fromkeys(categories)) if categories else []
+    
     results = []
-
-    batch_size = 2
+    processed_tickers = set()
+    batch_size = 5 
 
     try:
         for i in range(0, len(queries), batch_size):
-
             if await is_cancelled(redis, job_id):
                 return results
 
@@ -168,7 +90,16 @@ async def yahoo_scrape_logic(job_id, limit, categories, redis, site):
 
             for q in chunk:
                 res = scraper.scrape(q)
-                if res:
+                
+                if res and "ticker" in res:
+                    ticker = res["ticker"]
+                    if ticker in processed_tickers:
+                        continue
+                    
+                    processed_tickers.add(ticker)
+                    results.append(res)
+                    batch.append(res)
+                elif res: 
                     results.append(res)
                     batch.append(res)
 
@@ -176,7 +107,6 @@ async def yahoo_scrape_logic(job_id, limit, categories, redis, site):
                 return results
 
             progress = int((len(results) / len(queries)) * 100) if queries else 100
-
             if not await safe_progress(redis, job_id, min(progress, 99), site):
                 return results
 
@@ -184,8 +114,8 @@ async def yahoo_scrape_logic(job_id, limit, categories, redis, site):
         return results
 
     except Exception as e:
-        await redis.update_job(job_id, "failed", 0, site, data={"error": str(e)})
+        if redis:
+            await redis.update_job(job_id, "failed", 0, site, data={"error": str(e)})
         return []
-
     finally:
         scraper.close()
