@@ -1,7 +1,6 @@
 import asyncio
 import httpx
 import re
-from bs4 import BeautifulSoup
 from urllib.parse import quote
 from app.utils.job_control import is_cancelled, safe_complete, safe_progress, safe_stream
 
@@ -9,17 +8,17 @@ from app.utils.job_control import is_cancelled, safe_complete, safe_progress, sa
 class WikipediaScraper:
 
     def __init__(self):
-        self.base_url = "https://en.wikipedia.org/wiki/"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36"
-        }
+        self.search_url = "https://en.wikipedia.org/w/api.php"
 
     def _normalize_query(self, query: str) -> str:
         if not query:
             return ""
-        query = query.strip()
-        query = re.sub(r"\s+", " ", query)
-        return query.replace(" ", "_")
+        return re.sub(r"\s+", " ", query.strip()).lower()
+
+    def _clean_snippet(self, text: str) -> str:
+        text = re.sub(r"<.*?>", "", text)
+        text = re.sub(r"\[\d+\]", "", text)
+        return text.strip()
 
     def _wiki_url(self, title: str) -> str:
         return f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
@@ -30,56 +29,66 @@ class WikipediaScraper:
             normalized = self._normalize_query(query)
 
             if not normalized:
-                return {"query": original_query, "error": "Empty query"}
+                return {"query": original_query, "title": "", "description": "", "link": ""}
 
-            url = f"{self.base_url}{quote(normalized)}"
-            resp = await client.get(url, follow_redirects=True)
-            
-            if resp.status_code != 200:
-                return {"query": original_query, "error": f"Page not found (Status {resp.status_code})"}
+            # 🔹 STEP 1: search API
+            search_params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": normalized,
+                "format": "json"
+            }
 
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            search_resp = await client.get(self.search_url, params=search_params)
+            search_data = search_resp.json()
 
-            title_tag = soup.find(id="firstHeading")
-            title = title_tag.get_text() if title_tag else query
+            search_results = search_data.get("query", {}).get("search", [])
+            if not search_results:
+                return {"query": original_query, "title": "", "description": "", "link": ""}
 
-            content_div = soup.find(id="mw-content-text")
-            description = ""
-            
-            if content_div:
-                paragraphs = content_div.find_all('p')
-                for p in paragraphs:
-                    text = re.sub(r'\[\d+\]', '', p.get_text()).strip()
-                    if len(text) > 20: # Ensure it's a real sentence, not a tiny snippet
-                        description = text
-                        break
+            title = search_results[0]["title"]
+
+            # 🔹 STEP 2: extract API
+            extract_params = {
+                "action": "query",
+                "prop": "extracts",
+                "explaintext": True,
+                "titles": title,
+                "format": "json"
+            }
+
+            extract_resp = await client.get(self.search_url, params=extract_params)
+            extract_data = extract_resp.json()
+
+            pages = extract_data.get("query", {}).get("pages", {})
+            page = next(iter(pages.values()), {})
+
+            description = page.get("extract", "")
 
             return {
                 "query": original_query,
                 "title": title,
-                "description": description if description else "No description found.",
-                "link": str(resp.url)
+                "description": description,
+                "link": self._wiki_url(title)
             }
 
         except Exception as e:
-            return {"query": query, "error": str(e)}
+            return {"query": query, "title": "", "description": "", "link": ""}
 
 
 async def wiki_scrape_logic(job_id, limit, categories, redis, site):
     scraper = WikipediaScraper()
-    queries = categories if categories else []
+    queries = categories or []
     results = []
 
-    async with httpx.AsyncClient(headers=scraper.headers, timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=20.0) as client:
 
-        batch_size = 5
-
-        for i in range(0, len(queries), batch_size):
+        for i in range(0, len(queries), 5):
 
             if await is_cancelled(redis, job_id):
                 return results
 
-            chunk = queries[i:i + batch_size]
+            chunk = queries[i:i + 5]
 
             try:
                 tasks = [scraper.fetch_one(client, q) for q in chunk]
@@ -87,9 +96,8 @@ async def wiki_scrape_logic(job_id, limit, categories, redis, site):
 
                 batch = []
                 for res in responses:
-                    if res:
-                        results.append(res)
-                        batch.append(res)
+                    results.append(res)
+                    batch.append(res)
 
                 if not await safe_stream(redis, job_id, batch):
                     return results

@@ -3,7 +3,6 @@ from typing import Optional
 from celery.result import AsyncResult
 from redis.asyncio import Redis
 from pymongo.asynchronous.database import AsyncDatabase
-
 from app.repositories.job_repository import JobRepository
 from app.utils.celery import execute_scrape_process
 from app.schemas.scraper import JobResponse
@@ -25,7 +24,7 @@ class ScraperService:
 
         await self.redis.update_job(
             job_id=job_id,
-            status="pending",
+            status="completed",
             progress=0,
             site=site_value
         )
@@ -49,7 +48,7 @@ class ScraperService:
 
             return JobResponse(
                 job_id=job_id,
-                status="pending",
+                status="completed",
                 message="Scraping job started in background"
             )
 

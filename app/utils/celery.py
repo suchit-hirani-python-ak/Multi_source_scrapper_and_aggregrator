@@ -1,10 +1,13 @@
 import asyncio
+import datetime
 from celery import Celery
+from fastapi import logger
 from redis.asyncio import Redis, ConnectionPool
 from asgiref.sync import async_to_sync
 from app.core.config import settings
 from app.db.session import db_manager, get_db
 from app.repositories.job_repository import JobRepository
+from app.repositories.log_repository import LogRepository
 from app.scrapers.quotescrape import quote_scrape_logic
 from app.scrapers.bookscrape import book_scrape_logic
 from app.scrapers.ycombinatorscrape import ycombinator_scrape_logic
@@ -106,3 +109,32 @@ def execute_scrape_process(self, job_id: str, site: str, categories: list, limit
     except Exception as e:
         raise Exception(str(e))
     
+
+@celery_app.task(bind=True, name="log_task", max_retries=3)
+def log_task(self, log_data: dict):
+    """
+    Celery task to persist logs asynchronously.
+    """
+
+    try:
+
+        async def save_log():
+            await db_manager.connect_to_mongo()
+            try:
+                db = await get_db()
+                repo = LogRepository(db)
+
+                # ensure timestamp
+                if "timestamp" not in log_data:
+                    log_data["timestamp"] = datetime.utcnow()
+
+                await repo.create_log(log_data)
+
+            finally:
+                await db_manager.close_mongo_connection()
+
+        asyncio.run(save_log())
+
+    except Exception as e:
+        logger.error(f"Failed to store log in Celery task: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=5)

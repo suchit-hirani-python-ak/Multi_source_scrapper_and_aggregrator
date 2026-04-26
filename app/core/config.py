@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     encription: str
     admin_name: SecretStr
     admin_pass: SecretStr
+    cookie_same_site: str
+    cookie_secure: bool
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore"
