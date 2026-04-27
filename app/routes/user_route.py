@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Header, Response
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import SecretStr
 from app.db.session import get_db
@@ -43,7 +43,7 @@ async def login(response:Response,
     return await UserService(db).login_user(payload,response)
 
 @router.post("/refresh",response_model=Token)
-async def refresh(response: Response,refresh_token:str,db = Depends(get_db))->dict:
+async def refresh(response: Response,request:Request,db = Depends(get_db))->dict:
     """by providing refresh token generate pairs of tokens
 
     Args:
@@ -53,7 +53,7 @@ async def refresh(response: Response,refresh_token:str,db = Depends(get_db))->di
     Returns:
         dict: return tokens
     """
-    return await UserService(db).refresh_token(refresh_token,response)
+    return await UserService(db).refresh_token(request,response)
 
 @router.post("/setup-root",response_model=UserResponse)
 async def setup_admin(

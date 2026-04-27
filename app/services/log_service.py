@@ -1,29 +1,37 @@
 from datetime import datetime
-from app.repositories.log_repository import LogRepository
+from typing import Optional
+import logging
+from app.utils.celery import log_task
+
+logger = logging.getLogger(__name__)
 
 
 class LogService:
-
-    def __init__(self, db):
-        self.repo = LogRepository(db)
 
     async def log_request(
         self,
         path: str,
         method: str,
-        job_id: str,
-        response_time: float,
         status_code: int,
-        is_cached: bool
-    ):
-        log_data = {
-            "path": path,
-            "method": method,
-            "job_id": job_id,
-            "response_time": round(response_time, 4),
-            "status_code": status_code,
-            "is_cached": is_cached,
-            "timestamp": datetime.utcnow()
-        }
+        response_time: float,
+        is_cached: bool,
+        job_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> None:
 
-        await self.repo.create_log(log_data)
+        try:
+            log_data = {
+                "path": path,
+                "method": method,
+                "status_code": status_code,
+                "response_time": round(response_time, 4),
+                "is_cached": is_cached,
+                "job_id": job_id,
+                "user_id": user_id,
+                "timestamp": datetime.utcnow(),
+            }
+
+            log_task.delay(log_data)
+
+        except Exception as e:
+            logger.error(f"Logging failed: {e}")

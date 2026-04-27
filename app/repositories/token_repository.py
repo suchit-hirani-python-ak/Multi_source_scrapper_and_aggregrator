@@ -1,3 +1,4 @@
+from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 
 from datetime import datetime, timezone
@@ -23,7 +24,7 @@ class TokenRepository:
         return await self.collection.find_one_and_update(
             {"refresh_token": token_str, "revoked": False}, 
             {"$set": {"revoked": True}},
-            return_document=True 
+            return_document=ReturnDocument.AFTER 
         )
 
 

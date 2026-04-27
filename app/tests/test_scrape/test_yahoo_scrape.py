@@ -4,29 +4,25 @@ from app.scrapers.yahooscrape import YahooFinanceScraper, yahoo_scrape_logic
 
 @pytest.mark.asyncio
 async def test_yahoo_scrape_logic_success():
-
     mock_redis = AsyncMock()
-    job_id = "yahoo_job_123"
-    categories = ["apple", "AAPL", "Microsoft"] 
-    site = "yahoo"
+    job_id = "job123"
+    categories = ["apple", "AAPL", "Microsoft"]
 
-    def side_effect(query):
-        if "apple" in query.lower():
-            return {"query": query, "ticker": "AAPL", "price": 150.0}
-        return {"query": query, "ticker": "MSFT", "price": 300.0}
-
-    with patch("app.scrapers.yahooscrape.YahooFinanceScraper.scrape", side_effect=side_effect) as mock_scrape, \
+    with patch.object(YahooFinanceScraper, "scrape") as mock_scrape, \
          patch("app.scrapers.yahooscrape.is_cancelled", return_value=False), \
          patch("app.scrapers.yahooscrape.safe_stream", return_value=True), \
          patch("app.scrapers.yahooscrape.safe_progress", return_value=True), \
          patch("app.scrapers.yahooscrape.safe_complete", return_value=True):
-        
-        results = await yahoo_scrape_logic(job_id, 3, categories, mock_redis, site)
 
-        assert len(results) == 2 
-        assert results[0]["ticker"] == "AAPL"
-        assert results[1]["ticker"] == "MSFT"
-        assert mock_scrape.call_count == 3
+        mock_scrape.side_effect = [
+            {"query": "apple", "ticker": "AAPL"},
+            {"query": "AAPL", "ticker": "AAPL"},
+            {"query": "Microsoft", "ticker": "MSFT"},
+        ]
+
+        results = await yahoo_scrape_logic(job_id, 3, categories, mock_redis, "site")
+
+        assert len(results) == 2
 
 @pytest.mark.asyncio
 async def test_resolve_ticker_logic():

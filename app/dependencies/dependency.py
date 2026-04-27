@@ -5,13 +5,31 @@ from app.core.security import oauth2_scheme,redis_client
 from app.exception.error import Forbidden,Unauthorized
 from app.schemas.token import TokenResponse
 
-def get_current_user(token: str=Depends(oauth2_scheme)) -> TokenResponse:
+def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenResponse:
     try:
-        payload = jwt.decode(token,settings.access_token.get_secret_value(),algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            token,
+            settings.access_token.get_secret_value(),
+            algorithms=[settings.algorithm]
+        )
+
+    except jwt.ExpiredSignatureError:
+        raise Unauthorized("Access token expired")
+
+    except jwt.InvalidTokenError:
+        raise Unauthorized("Invalid access token")
+
+    # 🔐 Enforce token type
+    if payload.get("type") != "access":
+        raise Unauthorized("Invalid token type")
+
+    try:
         data = TokenResponse(**payload)
-        return data
-    except:
-        raise Unauthorized()
+    except Exception:
+        # payload structure invalid
+        raise Unauthorized("Invalid token payload")
+
+    return data
         
 
 class RoleChecker:

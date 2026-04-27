@@ -1,4 +1,5 @@
 import re
+import asyncio
 import yfinance as yf
 from app.utils.job_control import is_cancelled, safe_stream, safe_progress, safe_complete
 
@@ -6,6 +7,7 @@ class YahooFinanceScraper:
     def __init__(self):
         pass
 
+    
     def _normalize_query(self, query):
         return re.sub(r"\s+", " ", query.strip()) if query else ""
 
@@ -61,7 +63,7 @@ class YahooFinanceScraper:
                 "dividend_yield": f"{fmt(info.get('dividendRate'))} ({fmt(info.get('dividendYield'))})",
                 "ex_dividend_date": fmt(info.get("exDividendDate")),
                 "target_estimate_1y": fmt(info.get("targetMeanPrice")),
-                "url": f"https://yahoo.com{info.get('symbol')}"
+                "url": f"https://yahoo.com/quote/{info.get('symbol')}"
             }
 
         except Exception as e:
@@ -86,20 +88,38 @@ async def yahoo_scrape_logic(job_id, limit, categories, redis, site):
                 return results
 
             chunk = queries[i:i + batch_size]
+
+            loop = asyncio.get_running_loop()
+            tasks = [
+                loop.run_in_executor(None, scraper.scrape, q)
+                for q in chunk
+            ]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+
             batch = []
 
-            for q in chunk:
-                res = scraper.scrape(q)
-                
+            for res in responses:
+                if isinstance(res, Exception):
+                    if redis:
+                        await redis.update_job(
+                            job_id,
+                            "failed",
+                            0,
+                            site,
+                            data={"error": str(res)}
+                        )
+                    return []
+
                 if res and "ticker" in res:
                     ticker = res["ticker"]
                     if ticker in processed_tickers:
                         continue
-                    
+
                     processed_tickers.add(ticker)
                     results.append(res)
                     batch.append(res)
-                elif res: 
+
+                elif res:
                     results.append(res)
                     batch.append(res)
 
@@ -117,5 +137,6 @@ async def yahoo_scrape_logic(job_id, limit, categories, redis, site):
         if redis:
             await redis.update_job(job_id, "failed", 0, site, data={"error": str(e)})
         return []
+
     finally:
         scraper.close()

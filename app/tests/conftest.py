@@ -49,7 +49,7 @@ async def client(mock_db):
         mock_user.id = "660adb23f51bb4362e0020ee"
         mock_user.email = "suchit@gmail.com"
         mock_user.role = "user"
-
+        app.state.log_service = AsyncMock()
         app.dependency_overrides = {
             get_db: lambda: mock_db,
             get_current_user: lambda: mock_user
